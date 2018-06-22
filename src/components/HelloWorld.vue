@@ -3,8 +3,24 @@
     <h1>タスク管理</h1>
     <input type="text" v-model="task.text" /> <button @click="add">追加</button>
     <ul>
-      <li v-for="task in tasks" :key="task.objectId">
+      <li v-if="status == 'active'">
+        <strong>アクティブ</strong>
+      </li>
+      <li v-else>
+        <span @click="changeStatus('active')">アクティブ</span>
+      </li>
+      <li v-if="status == 'done'">
+        <strong>完了</strong>
+      </li>
+      <li v-else>
+        <span @click="changeStatus('done')">完了</span>
+      </li>
+    </ul>
+    <ul v-for="task in tasks" :key="task.objectId">
+      <li>
+        <input type="checkbox" v-model="task.done" @click="done(task, $event)" v-if="task.status == 'active'"/>
         {{ task.text }}
+        <span v-if="task.status == 'done'" @click="destroy(task)"> (削除)</span>
       </li>
     </ul>
   </div>
@@ -26,19 +42,27 @@ export default {
       tasks: [],
       task: {
         text: null
-      }
+      },
+      status: 'active'
     }
   },
   async created() {
     if (!ncmb.User.getCurrentUser()) {
       await ncmb.User.loginAsAnonymous();
     }
-    const tasks = await Task
-      .equalTo('status', 'active')
-      .fetchAll();
-    Vue.set(this, 'tasks', tasks);
+    await this.fetch();
   },
   methods: {
+    async fetch() {
+      const tasks = await Task
+        .equalTo('status', this.status)
+        .fetchAll();
+      Vue.set(this, 'tasks', tasks);
+    },
+    async changeStatus(status) {
+      this.status = status;
+      this.fetch();
+    },
     async add() {
       const text = this.task.text;
       const user = ncmb.User.getCurrentUser();
@@ -52,7 +76,19 @@ export default {
         .set('status', 'active')
         .set('acl', acl)
         .save();
-      this.tasks.push(task);
+      this.task.text = '';
+      await this.fetch();
+    },
+    async done(task, event) {
+      const checked = event.target.checked;
+      await task
+        .set('status', checked ? 'done' : 'active')
+        .update();
+      await this.fetch();
+    },
+    async destroy(task) {
+      await task.delete();
+      await this.fetch();
     }
   }
 }
