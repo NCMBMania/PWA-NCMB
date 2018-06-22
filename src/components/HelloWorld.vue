@@ -1,39 +1,59 @@
 <template>
   <div class="hello">
-    <h1>{{ msg }}</h1>
-    <p>
-      For guide and recipes on how to configure / customize this project,<br>
-      check out the
-      <a href="https://cli.vuejs.org" target="_blank">vue-cli documentation</a>.
-    </p>
-    <h3>Installed CLI Plugins</h3>
+    <h1>タスク管理</h1>
+    <input type="text" v-model="task.text" /> <button @click="add">追加</button>
     <ul>
-      <li><a href="https://github.com/vuejs/vue-cli/tree/dev/packages/%40vue/cli-plugin-babel" target="_blank">babel</a></li>
-      <li><a href="https://github.com/vuejs/vue-cli/tree/dev/packages/%40vue/cli-plugin-eslint" target="_blank">eslint</a></li>
-    </ul>
-    <h3>Essential Links</h3>
-    <ul>
-      <li><a href="https://vuejs.org" target="_blank">Core Docs</a></li>
-      <li><a href="https://forum.vuejs.org" target="_blank">Forum</a></li>
-      <li><a href="https://chat.vuejs.org" target="_blank">Community Chat</a></li>
-      <li><a href="https://twitter.com/vuejs" target="_blank">Twitter</a></li>
-    </ul>
-    <h3>Ecosystem</h3>
-    <ul>
-      <li><a href="https://router.vuejs.org" target="_blank">vue-router</a></li>
-      <li><a href="https://vuex.vuejs.org" target="_blank">vuex</a></li>
-      <li><a href="https://github.com/vuejs/vue-devtools#vue-devtools" target="_blank">vue-devtools</a></li>
-      <li><a href="https://vue-loader.vuejs.org" target="_blank">vue-loader</a></li>
-      <li><a href="https://github.com/vuejs/awesome-vue" target="_blank">awesome-vue</a></li>
+      <li v-for="task in tasks" :key="task.objectId">
+        {{ task.text }}
+      </li>
     </ul>
   </div>
 </template>
 
 <script>
+import ncmb from '@/ncmb'
+import Vue from 'vue'
+
+const Task = ncmb.DataStore('Task');
+
 export default {
   name: 'HelloWorld',
   props: {
     msg: String
+  },
+  data() {
+    return {
+      tasks: [],
+      task: {
+        text: null
+      }
+    }
+  },
+  async created() {
+    if (!ncmb.User.getCurrentUser()) {
+      await ncmb.User.loginAsAnonymous();
+    }
+    const tasks = await Task
+      .equalTo('status', 'active')
+      .fetchAll();
+    Vue.set(this, 'tasks', tasks);
+  },
+  methods: {
+    async add() {
+      const text = this.task.text;
+      const user = ncmb.User.getCurrentUser();
+      const acl = new ncmb.Acl();
+      acl
+        .setUserReadAccess(user, true)
+        .setUserWriteAccess(user, true);
+      let task = new Task;
+      task = await task
+        .set('text', text)
+        .set('status', 'active')
+        .set('acl', acl)
+        .save();
+      this.tasks.push(task);
+    }
   }
 }
 </script>
