@@ -58,6 +58,7 @@ export default {
     }
     await this.fetch();
     this.save();
+    
   },
   methods: {
     async onlineFetch() {
