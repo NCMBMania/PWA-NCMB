@@ -53,28 +53,59 @@ export default {
     await this.fetch();
   },
   methods: {
-    async fetch() {
-      const tasks = await Task
+    async onlineFetch() {
+      return await Task
         .equalTo('status', this.status)
         .fetchAll();
+    },
+    getCache() {
+      const str = localStorage.getItem('tasks');
+      const tasks = str ? JSON.parse(str) : {};
+      console.log(tasks)
+      tasks.active = this.jsonToClass(tasks.active || []);
+      tasks.done = this.jsonToClass(tasks.done || []);
+      return tasks;
+    },
+    jsonToClass(tasks) {
+      for (let i = 0; i < tasks.length; i += 1) {
+        const data = tasks[i];
+        const task = new Task;
+        tasks[i] = task
+          .set('objectId', data.objectId)
+          .set('text', data.text)
+          .set('status', data.status)
+          .set('acl', this.getAcl())
+      }
+      return tasks;
+    },
+    async offlineFetch() {
+      return this.getCache()[this.status];
+    },
+    async fetch() {
+      const tasks = await (navigator.onLine ? this.onlineFetch() : this.offlineFetch());
+      const cache = this.getCache();
+      cache[this.status] = tasks;
+      localStorage.setItem('tasks', JSON.stringify(cache));
       Vue.set(this, 'tasks', tasks);
     },
     async changeStatus(status) {
       this.status = status;
       this.fetch();
     },
-    async add() {
-      const text = this.task.text;
-      const user = ncmb.User.getCurrentUser();
+    getAcl() {
       const acl = new ncmb.Acl();
-      acl
+      const user = ncmb.User.getCurrentUser();
+      return acl
         .setUserReadAccess(user, true)
         .setUserWriteAccess(user, true);
+    },
+    async add() {
+      const text = this.task.text;
       let task = new Task;
       task = await task
         .set('text', text)
         .set('status', 'active')
-        .set('acl', acl)
+        .set('acl', this.getAcl())
         .save();
       this.task.text = '';
       await this.fetch();
