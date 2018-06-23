@@ -39,11 +39,17 @@ export default {
   },
   data() {
     return {
+      allTasks: [],
       tasks: [],
       task: {
         text: null
       },
-      status: 'active'
+      status: 'active',
+      queues: {
+        add: [],
+        done: [],
+        delete: []
+      }
     }
   },
   async created() {
@@ -51,19 +57,16 @@ export default {
       await ncmb.User.loginAsAnonymous();
     }
     await this.fetch();
+    this.save();
   },
   methods: {
     async onlineFetch() {
-      return await Task
-        .equalTo('status', this.status)
-        .fetchAll();
+      return await Task.fetchAll();
     },
     getCache() {
       const str = localStorage.getItem('tasks');
-      const tasks = str ? JSON.parse(str) : {};
-      console.log(tasks)
-      tasks.active = this.jsonToClass(tasks.active || []);
-      tasks.done = this.jsonToClass(tasks.done || []);
+      let tasks = str ? JSON.parse(str) : {};
+      tasks = this.jsonToClass(tasks || []);
       return tasks;
     },
     jsonToClass(tasks) {
@@ -82,15 +85,20 @@ export default {
       return this.getCache()[this.status];
     },
     async fetch() {
-      const tasks = await (navigator.onLine ? this.onlineFetch() : this.offlineFetch());
-      const cache = this.getCache();
-      cache[this.status] = tasks;
-      localStorage.setItem('tasks', JSON.stringify(cache));
-      Vue.set(this, 'tasks', tasks);
+      this.allTasks = await (navigator.onLine ? this.onlineFetch() : this.offlineFetch());
+      this.filter();
+    },
+    save() {
+      localStorage.setItem('tasks', JSON.stringify(this.allTasks));
+    },
+    filter() {
+      const status = this.status;
+      Vue.set(this, 'tasks', this.allTasks.filter(task => task.status == status));
+      this.save();
     },
     async changeStatus(status) {
       this.status = status;
-      this.fetch();
+      this.filter();
     },
     getAcl() {
       const acl = new ncmb.Acl();
@@ -99,27 +107,50 @@ export default {
         .setUserReadAccess(user, true)
         .setUserWriteAccess(user, true);
     },
+    addQueue(action, task) {
+      this.queues[action].push(task);
+      localStorage.setItem('queues', JSON.stringify(this.queues));
+    },
     async add() {
       const text = this.task.text;
       let task = new Task;
-      task = await task
+      task
         .set('text', text)
         .set('status', 'active')
-        .set('acl', this.getAcl())
-        .save();
+        .set('acl', this.getAcl());
+      if (navigator.onLine) {
+        task = await task.save();
+      } else {
+        task.set('objectId', `local_${Math.random().toString(36).slice(-8)}`);
+        this.addQueue('add', task);
+      }
       this.task.text = '';
-      await this.fetch();
+      this.allTasks.push(task);
+      this.filter();
     },
     async done(task, event) {
       const checked = event.target.checked;
-      await task
-        .set('status', checked ? 'done' : 'active')
-        .update();
-      await this.fetch();
+      task.set('status', checked ? 'done' : 'active');
+      const objectId = task.objectId;
+      const index = this.allTasks.findIndex(task => task.objectId == objectId);
+      this.allTasks[index] = task;
+      if (navigator.onLine) {
+        await task.update();
+      } else {
+        this.addQueue('done', task);
+      }
+      this.filter();
     },
     async destroy(task) {
-      await task.delete();
-      await this.fetch();
+      const objectId = task.objectId;
+      const index = this.allTasks.findIndex(task => task.objectId == objectId);
+      this.allTasks.splice(index, 1);
+      if (navigator.onLine) {
+        await task.delete();
+      } else {
+        this.addQueue('delete', task);
+      }
+      this.filter();
     }
   }
 }
