@@ -41,6 +41,7 @@ export default {
   },
   data() {
     return {
+      message: '',
       allTasks: [],
       tasks: [],
       task: {
@@ -75,10 +76,9 @@ export default {
       }
       this.queues = queues;
     },
-    async addQueue(tasks) {
+    async newQueue(tasks) {
       for (let i = 0; i < tasks.length; i += 1) {
         let task = tasks[i];
-        const objectId = task.objectId;
         delete task.objectId;
         task = await this.saveTask(task)
         this.queues.add.splice(0, 1);
@@ -115,10 +115,9 @@ export default {
       }
     },
     async executeQueue() {
-      const me = this;
       if (this.queues.add.length > 0) {
         this.message = '未処理のデータ追加中…';
-        await this.addQueue(this.queues.add);
+        await this.newQueue(this.queues.add);
       }
       if (this.queues.done.length > 0) {
         this.message = '未処理のデータ更新中…';
@@ -192,6 +191,7 @@ export default {
     },
     addQueue(action, task) {
       this.queues[action].push(task);
+      this.saveQueue();
     },
     saveQueue() {
       localStorage.setItem('queues', JSON.stringify(this.queues));
