@@ -1,5 +1,6 @@
 <template>
   <div class="hello">
+    <div>メッセージ: {{ message }}</div>
     <h1>タスク管理</h1>
     <input type="text" v-model="task.text" /> <button @click="add">追加</button>
     <ul>
@@ -34,6 +35,7 @@ const Task = ncmb.DataStore('Task');
 
 export default {
   name: 'HelloWorld',
+  message: '',
   props: {
     msg: String
   },
@@ -56,11 +58,91 @@ export default {
     if (!ncmb.User.getCurrentUser()) {
       await ncmb.User.loginAsAnonymous();
     }
+    this.message = navigator.onLine ? 'オンライン' : 'オフライン';
     await this.fetch();
     this.save();
-    
+    this.recoverQueue();
+    this.executeQueue();
+    this.watchQueue();
   },
   methods: {
+    recoverQueue() {
+      let queues = localStorage.getItem('queues');
+      queues = queues ? JSON.parse(queues) : this.queues;
+      for (const action of ['add', 'done', 'delete']) {
+        if (queues[action].length > 0)
+          queues[action] = this.jsonToClass(queues[action]);
+      }
+      this.queues = queues;
+    },
+    async addQueue(tasks) {
+      for (let i = 0; i < tasks.length; i += 1) {
+        let task = tasks[i];
+        const objectId = task.objectId;
+        delete task.objectId;
+        task = await this.saveTask(task)
+        this.queues.add.splice(0, 1);
+      }
+    },
+    async doneQueue(tasks) {
+      for (let i = 0; i < tasks.length; i += 1) {
+        let task = tasks[i];
+        const objectId = task.objectId;
+        if (objectId.match(/^local_.*/)) {
+          delete task.objectId;
+          task = await this.saveTask(task)
+        }
+        task = await task.update();
+        const index = this.allTasks.findIndex(task => task.objectId == objectId);
+        if (index > -1) {
+          this.allTasks[index] = task;
+        }
+        this.queues.done.splice(0, 1);
+      }
+    },
+    async deleteQueue(tasks) {
+      for (let i = 0; i < tasks.length; i += 1) {
+        let task = tasks[i];
+        const objectId = task.objectId;
+        if (!objectId.match(/^local_.*/)) {
+          task = await task.delete()
+        }
+        const index = this.allTasks.findIndex(task => task.objectId == objectId);
+        if (index > -1) {
+          this.allTasks[index].splice(index, 1);
+        }
+        this.queues.delete.splice(0, 1);
+      }
+    },
+    async executeQueue() {
+      const me = this;
+      if (this.queues.add.length > 0) {
+        this.message = '未処理のデータ追加中…';
+        await this.addQueue(this.queues.add);
+      }
+      if (this.queues.done.length > 0) {
+        this.message = '未処理のデータ更新中…';
+        await this.doneQueue(this.queues.done);
+      }
+      if (this.queues.delete.length > 0) {
+        this.message = '未処理のデータ削除中…';
+        await this.deleteQueue(this.queues.delete);
+      }
+      this.message = 'キューの処理完了';
+      this.filter();
+      this.saveQueue();
+    },
+    async watchQueue() {
+      const me = this;
+      console.log('watching...');
+      window.addEventListener('online', () => {
+        me.message = 'オンライン';
+        me.executeQueue();
+      });
+      window.addEventListener('offline', () => {
+        me.message = 'オフライン';
+      });
+    },
     async onlineFetch() {
       return await Task.fetchAll();
     },
@@ -83,7 +165,7 @@ export default {
       return tasks;
     },
     async offlineFetch() {
-      return this.getCache()[this.status];
+      return this.getCache();
     },
     async fetch() {
       this.allTasks = await (navigator.onLine ? this.onlineFetch() : this.offlineFetch());
@@ -110,6 +192,8 @@ export default {
     },
     addQueue(action, task) {
       this.queues[action].push(task);
+    },
+    saveQueue() {
       localStorage.setItem('queues', JSON.stringify(this.queues));
     },
     async add() {
@@ -119,15 +203,19 @@ export default {
         .set('text', text)
         .set('status', 'active')
         .set('acl', this.getAcl());
+      task = await this.saveTask(task);
+      this.task.text = '';
+      this.allTasks.push(task);
+      this.filter();
+    },
+    async saveTask(task) {
       if (navigator.onLine) {
         task = await task.save();
       } else {
         task.set('objectId', `local_${Math.random().toString(36).slice(-8)}`);
         this.addQueue('add', task);
       }
-      this.task.text = '';
-      this.allTasks.push(task);
-      this.filter();
+      return task;
     },
     async done(task, event) {
       const checked = event.target.checked;
